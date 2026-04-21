@@ -1,0 +1,1496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aero Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   TOKENS
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg:         #0d0f14;
+  --surface:    #161b24;
+  --surface2:   #1e2535;
+  --border:     rgba(255,255,255,0.09);
+  --border-hi:  rgba(255,255,255,0.18);
+  --text:       #e2e8f4;
+  --muted:      #4a566e;
+  --muted2:     #6b7d96;
+  --blue:       #0070f3;
+  --blue-dim:   rgba(0,112,243,0.15);
+  --blue-glow:  rgba(0,112,243,0.35);
+  --cyan:       #00d4ff;
+  --cyan-dim:   rgba(0,212,255,0.12);
+  --green:      #22c55e;
+  --red:        #ef4444;
+  --amber:      #f59e0b;
+  --cross-c:    #4499ff;   /* PS cross blue  */
+  --circle-c:   #ff5555;   /* PS circle red  */
+  --triangle-c: #44cc88;   /* PS triangle green */
+  --square-c:   #dd88ff;   /* PS square purple */
+  --font:       'Barlow Condensed', sans-serif;
+  --mono:       'Space Mono', monospace;
+  --r:          12px;
+  --r-sm:       8px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Scanlines */
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(transparent, transparent 3px, rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.03) 4px);
+}
+
+/* ── FULLSCREEN ─────────────────────────────────────── */
+:fullscreen #app, :-webkit-full-screen #app { height: 100vh; }
+
+/* ── MAIN SHELL ─────────────────────────────────────── */
+#app {
+  position: relative; z-index: 1;
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+/* ── TOP BAR ─────────────────────────────────────────── */
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; gap: 6px;
+}
+#logo {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.14em; color: var(--blue);
+}
+.topbar-group { display: flex; align-items: center; gap: 5px; }
+
+.tb-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 8px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-family: var(--mono); font-size: 9px; color: var(--muted);
+  letter-spacing: 0.08em; cursor: pointer; transition: all 0.18s;
+  white-space: nowrap;
+}
+.tb-btn:active  { transform: scale(0.94); }
+.tb-btn.active  { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+.tb-btn.warn    { border-color: var(--amber); color: var(--amber); }
+.tb-btn svg     { width: 11px; height: 11px; flex-shrink: 0; }
+
+.led { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.4s, box-shadow 0.4s; }
+.led.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.led.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+/* ── MODE TOGGLE ─────────────────────────────────────── */
+#modeToggle {
+  flex-shrink: 0; width: 100%;
+  display: grid; grid-template-columns: 1fr 1fr;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 11px; padding: 3px; position: relative;
+}
+#modeSlider {
+  position: absolute; inset: 3px; width: calc(50% - 3px);
+  background: var(--blue); border-radius: 8px;
+  box-shadow: 0 0 18px var(--blue-glow);
+  transition: transform 0.28s cubic-bezier(.4,0,.2,1); pointer-events: none;
+}
+#modeSlider.pad { transform: translateX(100%); }
+.mode-btn {
+  position: relative; z-index: 1;
+  padding: 8px 0; border: none; border-radius: 8px;
+  background: transparent; cursor: pointer;
+  font-family: var(--font); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); transition: color 0.22s;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+}
+.mode-btn.active { color: #000; }
+.mode-btn svg { width: 12px; height: 12px; }
+
+/* ── STATUS BAR ──────────────────────────────────────── */
+#statusBar {
+  flex-shrink: 0; width: 100%;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 9px; color: var(--cyan);
+  letter-spacing: 0.06em; transition: all 0.18s; overflow: hidden;
+}
+.blink { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); flex-shrink: 0; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+#statusText { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#statusBar.alert  { background: var(--blue-dim); border-color: var(--blue); color: #fff; }
+#statusBar.alert .blink { animation: none; opacity:1; }
+#statusBar.s-green { border-color: var(--green); color: var(--green); }
+#statusBar.s-red   { border-color: var(--red);   color: var(--red); }
+
+/* ═══════════════════════════════════════════════════════════
+   GAMEPAD SCENE — fills flex remainder
+   ═══════════════════════════════════════════════════════════ */
+#gamepadScene {
+  position: relative;
+  flex: 1 1 0; min-height: 0;
+  width: 100%;
+}
+
+/* hidden utility */
+.hidden { display: none !important; }
+
+/* ── GENERIC GP ELEMENT (absolutely positioned, resizable in edit mode) ── */
+.gp-el {
+  position: absolute;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ────────────────────────────────────────────────────
+   TRIGGER BUTTONS (L2 / R2)
+   ──────────────────────────────────────────────────── */
+.trigger-btn {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px 10px 20px 20px;
+  font-family: var(--font); font-size: 13px; font-weight: 800;
+  letter-spacing: 0.1em; color: var(--muted2);
+  cursor: pointer; width: 100%; height: 100%;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.trigger-btn.pressed, .trigger-btn:active {
+  background: rgba(0,112,243,0.25);
+  color: var(--blue);
+  box-shadow: inset 0 -3px 12px var(--blue-glow);
+}
+#el-l2  { left: 0%;  top: 0%; width: 44%; height: 11%; }
+#el-r2  { left: 56%; top: 0%; width: 44%; height: 11%; }
+
+/* ────────────────────────────────────────────────────
+   BUMPER BUTTONS (L1 / R1)
+   ──────────────────────────────────────────────────── */
+.bumper-btn {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  font-family: var(--font); font-size: 12px; font-weight: 800;
+  letter-spacing: 0.1em; color: var(--muted2);
+  cursor: pointer; width: 100%; height: 100%;
+  transition: background 0.1s, color 0.1s;
+}
+.bumper-btn.pressed, .bumper-btn:active {
+  background: var(--blue-dim); color: var(--blue);
+}
+#el-l1  { left: 0%;  top: 13%; width: 28%; height: 8%; }
+#el-r1  { left: 72%; top: 13%; width: 28%; height: 8%; }
+
+/* ────────────────────────────────────────────────────
+   CENTER META BUTTONS (Create / PS / Options)
+   ──────────────────────────────────────────────────── */
+.meta-btn {
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1px;
+  background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 50%;
+  font-family: var(--font); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--muted2);
+  cursor: pointer; width: 100%; height: 100%;
+  transition: background 0.1s, color 0.1s;
+}
+.meta-btn.pressed, .meta-btn:active { background: var(--blue-dim); color: var(--blue); }
+.meta-btn svg { width: 12px; height: 12px; }
+#el-create  { left: 29%; top: 14%; width: 12%; height: 7%; border-radius: 8px; }
+#el-ps      { left: 44%; top: 13%; width: 12%; height: 8%; }
+#el-options { left: 59%; top: 14%; width: 12%; height: 7%; border-radius: 8px; }
+
+#el-ps .meta-btn { background: var(--surface); border-color: var(--blue); }
+#el-ps .meta-btn:active { background: var(--blue); color: #fff; }
+.ps-logo { font-size: 14px; }
+
+/* ────────────────────────────────────────────────────
+   CENTER TOUCHPAD  (trackpad area like DualSense center)
+   ──────────────────────────────────────────────────── */
+#el-cpad {
+  left: 28%; top: 23%; width: 44%; height: 22%;
+}
+#centerPad {
+  width: 100%; height: 100%;
+  background: linear-gradient(160deg, #1a2030 0%, #131824 100%);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  position: relative; overflow: hidden;
+  cursor: crosshair;
+  box-shadow: inset 0 2px 12px rgba(0,0,0,0.5), inset 0 -1px 3px rgba(255,255,255,0.03);
+}
+#centerPad::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.005) 2px, rgba(255,255,255,0.005) 3px);
+}
+#cpadGhost {
+  position: absolute; width: 6px; height: 6px;
+  background: var(--blue); border-radius: 50%;
+  transform: translate(-50%,-50%);
+  box-shadow: 0 0 6px var(--blue-glow); pointer-events: none;
+  transition: left 0.04s, top 0.04s;
+  left: 50%; top: 50%;
+}
+#cpadHint {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  pointer-events: none;
+}
+#cpadHint span { font-family: var(--mono); font-size: 8px; color: var(--muted); letter-spacing: 0.07em; }
+#cpadHint.gone { opacity: 0; transition: opacity 0.35s; }
+
+.cpad-fdot {
+  position: absolute; width: 10px; height: 10px;
+  border: 1.5px solid var(--blue); border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none;
+  opacity: 0; background: var(--blue-dim); transition: opacity 0.07s;
+}
+
+/* ────────────────────────────────────────────────────
+   D-PAD
+   ──────────────────────────────────────────────────── */
+#el-dpad { left: 2%; top: 23%; width: 24%; height: 30%; }
+#dpad {
+  position: relative; width: 100%; height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+.dp {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-size: 14px; color: var(--muted2);
+  cursor: pointer; transition: background 0.1s, color 0.1s;
+}
+.dp.pressed, .dp:active { background: var(--blue-dim); color: var(--blue); }
+#dp-up    { grid-column: 2; grid-row: 1; border-radius: 8px 8px 0 0; }
+#dp-left  { grid-column: 1; grid-row: 2; border-radius: 8px 0 0 8px; }
+#dp-center{ grid-column: 2; grid-row: 2; background: var(--surface); border-color: var(--border-hi); cursor: default; pointer-events: none; }
+#dp-right { grid-column: 3; grid-row: 2; border-radius: 0 8px 8px 0; }
+#dp-down  { grid-column: 2; grid-row: 3; border-radius: 0 0 8px 8px; }
+
+/* ────────────────────────────────────────────────────
+   FACE BUTTONS  (△ □ ○ ✕)
+   ──────────────────────────────────────────────────── */
+#el-face { right: 2%; top: 23%; left: auto; width: 24%; height: 30%; }
+#faceCluster {
+  position: relative; width: 100%; height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+.fb {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-family: var(--font); font-size: 13px; font-weight: 800;
+  cursor: pointer; transition: background 0.1s, transform 0.08s;
+}
+.fb:active, .fb.pressed { transform: scale(0.92); }
+#fb-triangle { grid-column: 2; grid-row: 1; border-radius: 8px 8px 0 0; color: var(--triangle-c); border-color: rgba(68,204,136,0.2); }
+#fb-square   { grid-column: 1; grid-row: 2; border-radius: 8px 0 0 8px; color: var(--square-c);   border-color: rgba(221,136,255,0.2); }
+#fb-blank    { grid-column: 2; grid-row: 2; background: var(--surface); border-color: var(--border); pointer-events: none; }
+#fb-circle   { grid-column: 3; grid-row: 2; border-radius: 0 8px 8px 0; color: var(--circle-c);   border-color: rgba(255,85,85,0.2); }
+#fb-cross    { grid-column: 2; grid-row: 3; border-radius: 0 0 8px 8px; color: var(--cross-c);    border-color: rgba(68,153,255,0.2); }
+#fb-triangle.pressed, #fb-triangle:active { background: rgba(68,204,136,0.2); }
+#fb-square.pressed,   #fb-square:active   { background: rgba(221,136,255,0.2); }
+#fb-circle.pressed,   #fb-circle:active   { background: rgba(255,85,85,0.2); }
+#fb-cross.pressed,    #fb-cross:active    { background: rgba(68,153,255,0.2); }
+
+/* ────────────────────────────────────────────────────
+   ANALOG STICKS
+   ──────────────────────────────────────────────────── */
+.stick-wrap {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.stick-base {
+  width: 80%; aspect-ratio: 1;
+  background: radial-gradient(circle at 40% 35%, #242c3c, #111520);
+  border: 1.5px solid var(--border-hi);
+  border-radius: 50%;
+  position: relative;
+  box-shadow: inset 0 3px 10px rgba(0,0,0,0.7), 0 0 0 2px rgba(0,0,0,0.4);
+}
+.stick-base::before {
+  content: ''; position: absolute; inset: 12%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, #2e3a50, #0e1420);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.stick-knob {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  width: 55%; aspect-ratio: 1;
+  background: radial-gradient(circle at 38% 32%, #3d4f66, #1a2232);
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 3px rgba(255,255,255,0.07);
+  pointer-events: none;
+  transition: box-shadow 0.1s;
+  /* subtle crosshatch texture */
+  background-image: radial-gradient(circle at 38% 32%, #3d4f66, #1a2232),
+    repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.015) 3px, rgba(255,255,255,0.015) 4px);
+}
+.stick-knob.active { box-shadow: 0 0 12px var(--blue-glow), 0 3px 8px rgba(0,0,0,0.6); }
+.stick-label {
+  position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 7px; color: var(--muted); letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+#el-lstick { left: 3%;  bottom: 2%; width: 34%; height: 28%; }
+#el-rstick { right: 3%; bottom: 2%; left: auto; width: 34%; height: 28%; }
+
+/* ════════════════════════════════════════════════════
+   TOUCHPAD MODE (existing)
+   ════════════════════════════════════════════════════ */
+#touchpadMode {
+  flex: 1 1 0; min-height: 0;
+  width: 100%; display: flex; flex-direction: column;
+}
+#mainArea {
+  flex: 1; min-height: 0; position: relative;
+  border-radius: var(--r); border: 1px solid var(--border);
+  overflow: hidden; background: #0e1220;
+  aspect-ratio: 4/3; max-height: 100%; align-self: center; width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#mainArea.click-flash  { border-color: var(--blue);  box-shadow: inset 0 0 28px var(--blue-dim); }
+#mainArea.dbl-flash    { border-color: #fff;          box-shadow: inset 0 0 40px rgba(255,255,255,0.1); }
+#mainArea.drag-active  { border-color: var(--amber);  animation: dragP 0.9s ease-in-out infinite; }
+@keyframes dragP { 0%,100%{box-shadow:0 0 0 2px rgba(245,158,11,0.18)} 50%{box-shadow:0 0 0 4px rgba(245,158,11,0.3)} }
+
+#touchSurface {
+  position: absolute; inset: 0 0 75px 0;
+  background: linear-gradient(170deg, rgba(255,255,255,0.02) 0%, rgba(0,0,0,0.06) 100%), #0e1220;
+  border-bottom: 1px solid var(--border-hi);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.35);
+  cursor: crosshair; overflow: hidden;
+}
+#touchSurface::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(255,255,255,0.006) 2px, rgba(255,255,255,0.006) 3px);
+}
+#ghostDot {
+  position: absolute; width: 6px; height: 6px;
+  background: var(--blue); border-radius: 50%;
+  transform: translate(-50%,-50%);
+  box-shadow: 0 0 7px var(--blue-glow); pointer-events: none;
+  transition: left 0.04s, top 0.04s; left: 50%; top: 50%;
+}
+.fdot {
+  position: absolute; width: 13px; height: 13px;
+  border: 1.5px solid var(--blue); border-radius: 50%;
+  transform: translate(-50%,-50%); pointer-events: none;
+  opacity: 0; background: var(--blue-dim); transition: opacity 0.08s;
+}
+.corner { position: absolute; width: 13px; height: 13px; border-color: var(--border-hi); border-style: solid; }
+.corner.tl { top:8px; left:8px;   border-width:1.5px 0 0 1.5px; border-radius:3px 0 0 0; }
+.corner.tr { top:8px; right:8px;  border-width:1.5px 1.5px 0 0; border-radius:0 3px 0 0; }
+.corner.bl { bottom:8px; left:8px;  border-width:0 0 1.5px 1.5px; border-radius:0 0 0 3px; }
+.corner.br { bottom:8px; right:8px; border-width:0 1.5px 1.5px 0; border-radius:0 0 3px 0; }
+#gestureBadge {
+  position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 8px; color: var(--blue);
+  background: rgba(0,0,0,0.6); border: 1px solid var(--border);
+  padding: 3px 8px; border-radius: 20px; letter-spacing: 0.1em;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s; white-space: nowrap;
+}
+#gestureBadge.show { opacity: 1; }
+#dragBadge {
+  position: absolute; top: 6px; right: 6px;
+  font-family: var(--mono); font-size: 8px; color: var(--amber);
+  background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.35);
+  padding: 3px 7px; border-radius: 20px; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+}
+#dragBadge.show { opacity: 1; }
+#padHint {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  pointer-events: none;
+}
+#padHint span { font-family: var(--mono); font-size: 8px; color: var(--muted); letter-spacing: 0.07em; }
+#padHint.gone { opacity: 0; transition: opacity 0.35s; }
+#clickButtons {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 75px;
+  display: flex; background: #0b0e1a;
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+}
+.click-btn {
+  flex: 1; border: none; background: transparent;
+  font-family: var(--font); font-size: 14px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted2);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background 0.1s, color 0.1s;
+}
+.click-btn:active, .click-btn.pressed { background: var(--blue-dim); color: var(--blue); }
+#rightBtn { border-left: 1px solid var(--border); }
+.click-btn svg { width: 15px; height: 15px; }
+
+.ripple {
+  position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,112,243,0.5), transparent 70%);
+  transform: translate(-50%,-50%) scale(0);
+  animation: ripOut 0.45s ease-out forwards; pointer-events: none;
+}
+@keyframes ripOut { to { transform: translate(-50%,-50%) scale(8); opacity: 0; } }
+
+/* ════════════════════════════════════════════════════
+   HUD EDITOR OVERLAY
+   ════════════════════════════════════════════════════ */
+body.edit-mode #gamepadScene .gp-el {
+  outline: 1.5px dashed rgba(0,112,243,0.6);
+  outline-offset: 2px;
+}
+body.edit-mode #gamepadScene .gp-el::after {
+  content: attr(data-label);
+  position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+  background: var(--blue); color: #fff;
+  font-family: var(--mono); font-size: 7px; letter-spacing: 0.06em;
+  padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+  pointer-events: none; z-index: 100;
+}
+.resize-handle {
+  position: absolute; bottom: -6px; right: -6px;
+  width: 14px; height: 14px;
+  background: var(--blue); border-radius: 3px;
+  border: 1.5px solid #fff;
+  cursor: se-resize; z-index: 200;
+  display: none;
+}
+body.edit-mode .resize-handle { display: block; }
+
+#editToolbar {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px; align-items: center;
+  background: var(--surface); border: 1px solid var(--border-hi);
+  padding: 8px 14px; border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  z-index: 1000; opacity: 0; pointer-events: none;
+  transition: opacity 0.22s, transform 0.22s;
+  transform: translate(-50%, 16px);
+}
+body.edit-mode #editToolbar { opacity: 1; pointer-events: all; transform: translate(-50%, 0); }
+
+.edit-tool-btn {
+  padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text);
+  font-family: var(--font); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+  transition: all 0.15s;
+}
+.edit-tool-btn.save  { background: var(--blue);  border-color: var(--blue);  color: #fff; }
+.edit-tool-btn.reset { border-color: var(--amber); color: var(--amber); }
+.edit-tool-btn:active { transform: scale(0.94); }
+
+/* Selected element highlight */
+.gp-el.selected { outline-color: var(--cyan) !important; }
+
+video { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div id="logo">AERO CONTROL</div>
+    <div class="topbar-group">
+      <button class="tb-btn" id="btnFullscreen" onclick="toggleFullscreen()" title="Fullscreen">
+        <svg id="fsIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+        </svg>
+      </button>
+      <button class="tb-btn" id="btnEditHUD" onclick="toggleEditMode()" title="Customize HUD">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        Edit HUD
+      </button>
+      <button class="tb-btn" id="btnFlash" onclick="toggleFlash()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M15 2H9l-1 7h4l-2 13 9-11h-5l1-9z"/>
+        </svg>
+      </button>
+      <div class="tb-btn" id="wsLed" style="gap:5px;">
+        <div class="led" id="wsDot"></div>
+        <span id="wsLabel">OFFLINE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODE TOGGLE -->
+  <div id="modeToggle">
+    <div id="modeSlider"></div>
+    <button class="mode-btn active" id="btnGamepad" onclick="setMode('gamepad')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="6" width="20" height="12" rx="5"/>
+        <circle cx="8" cy="12" r="2"/><circle cx="16" cy="10" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+        <line x1="5" y1="10" x2="5" y2="14"/><line x1="3" y1="12" x2="7" y2="12"/>
+      </svg>
+      Gamepad
+    </button>
+    <button class="mode-btn" id="btnPad" onclick="setMode('pad')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <rect x="2" y="4" width="20" height="16" rx="3"/>
+        <line x1="2" y1="15" x2="22" y2="15"/><line x1="12" y1="15" x2="12" y2="20"/>
+      </svg>
+      Touchpad
+    </button>
+  </div>
+
+  <!-- ══ GAMEPAD SCENE ══════════════════════════════ -->
+  <div id="gamepadScene">
+
+    <!-- L2 / R2 Triggers -->
+    <div class="gp-el" id="el-l2" data-label="L2 TRIGGER">
+      <div class="trigger-btn" id="btn-l2">L2</div>
+    </div>
+    <div class="gp-el" id="el-r2" data-label="R2 TRIGGER">
+      <div class="trigger-btn" id="btn-r2">R2</div>
+    </div>
+
+    <!-- L1 / R1 Bumpers -->
+    <div class="gp-el" id="el-l1" data-label="L1">
+      <div class="bumper-btn" id="btn-l1">L1</div>
+    </div>
+    <div class="gp-el" id="el-r1" data-label="R1">
+      <div class="bumper-btn" id="btn-r1">R1</div>
+    </div>
+
+    <!-- Meta buttons -->
+    <div class="gp-el" id="el-create" data-label="CREATE">
+      <div class="meta-btn" id="btn-create">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+    </div>
+    <div class="gp-el" id="el-ps" data-label="PS">
+      <div class="meta-btn" id="btn-ps">
+        <span class="ps-logo">⏻</span>
+      </div>
+    </div>
+    <div class="gp-el" id="el-options" data-label="OPTIONS">
+      <div class="meta-btn" id="btn-options">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="1"/><circle cx="6" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg>
+      </div>
+    </div>
+
+    <!-- Center Trackpad -->
+    <div class="gp-el" id="el-cpad" data-label="TRACKPAD">
+      <div id="centerPad">
+        <div id="cpadGhost"></div>
+        <div class="cpad-fdot" id="cf0"></div>
+        <div class="cpad-fdot" id="cf1"></div>
+        <div class="cpad-fdot" id="cf2"></div>
+        <div id="cpadHint">
+          <span>SLIDE = MOVE</span>
+          <span>TAP = CLICK</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- D-Pad -->
+    <div class="gp-el" id="el-dpad" data-label="D-PAD">
+      <div id="dpad">
+        <div class="dp" id="dp-up">▲</div>
+        <div class="dp" id="dp-left">◀</div>
+        <div class="dp" id="dp-center"></div>
+        <div class="dp" id="dp-right">▶</div>
+        <div class="dp" id="dp-down">▼</div>
+      </div>
+    </div>
+
+    <!-- Face Buttons -->
+    <div class="gp-el" id="el-face" data-label="FACE">
+      <div id="faceCluster">
+        <div class="fb" id="fb-triangle">△</div>
+        <div class="fb" id="fb-square">□</div>
+        <div class="fb" id="fb-blank"></div>
+        <div class="fb" id="fb-circle">○</div>
+        <div class="fb" id="fb-cross">✕</div>
+      </div>
+    </div>
+
+    <!-- Left Stick -->
+    <div class="gp-el" id="el-lstick" data-label="L-STICK">
+      <div class="stick-wrap">
+        <div class="stick-base" id="lstickBase">
+          <div class="stick-knob" id="lstickKnob"></div>
+          <div class="stick-label">L3</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Stick -->
+    <div class="gp-el" id="el-rstick" data-label="R-STICK">
+      <div class="stick-wrap">
+        <div class="stick-base" id="rstickBase">
+          <div class="stick-knob" id="rstickKnob"></div>
+          <div class="stick-label">R3</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize handles (shown in edit mode) -->
+  </div>
+
+  <!-- ══ TOUCHPAD MODE ══════════════════════════════ -->
+  <div id="touchpadMode" class="hidden">
+    <div id="mainArea">
+      <div id="touchSurface">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div id="ghostDot"></div>
+        <div class="fdot" id="fd0"></div><div class="fdot" id="fd1"></div><div class="fdot" id="fd2"></div>
+        <div id="padHint">
+          <span>SLIDE ↔ MOVE  ·  TAP = CLICK  ·  HOLD = DRAG</span>
+          <span>✌ TWO: SCROLL / ZOOM / RIGHT CLICK</span>
+          <span>☰ THREE: TASK VIEW / SHOW DESKTOP</span>
+        </div>
+        <div id="gestureBadge"></div>
+        <div id="dragBadge">✥ DRAG ACTIVE</div>
+      </div>
+      <div id="clickButtons">
+        <button class="click-btn" id="leftBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 10h8V3"/>
+          </svg>Left Click
+        </button>
+        <button class="click-btn" id="rightBtn">
+          Right Click
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="4"/><path d="M21 10h-8V3"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div id="statusBar">
+    <div class="blink"></div>
+    <div id="statusText">SYSTEM STANDBY</div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- HUD Edit Toolbar (global — outside #app) -->
+<div id="editToolbar">
+  <button class="edit-tool-btn save"  onclick="saveLayout()">💾 Save</button>
+  <button class="edit-tool-btn reset" onclick="resetLayout()">↺ Reset</button>
+  <button class="edit-tool-btn"       onclick="toggleEditMode()">✕ Done</button>
+</div>
+
+<video id="webcam" autoplay playsinline></video>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════
+const NGROK      = "vigorously-heterochthonous-mitch.ngrok-free.app";
+const BASE_SPEED = 2.4;
+const SEND_THRESH = 0.0018;
+const STICK_DEADZONE = 0.12;
+const STICK_SPEED_MOUSE  = 0.007;  // per frame at full deflection
+const STICK_SPEED_SCROLL = 0.06;   // scroll rate at full deflection
+
+// ═══════════════════════════════════════════════════════════
+//  DEFAULT HUD LAYOUT  (left%, top%, width%, height%)
+//  Percentages of #gamepadScene container
+// ═══════════════════════════════════════════════════════════
+const DEFAULT_LAYOUT = {
+  'el-l2':      { l:0,   t:0,   w:44,  h:11 },
+  'el-r2':      { l:56,  t:0,   w:44,  h:11 },
+  'el-l1':      { l:0,   t:13,  w:28,  h:8  },
+  'el-r1':      { l:72,  t:13,  w:28,  h:8  },
+  'el-create':  { l:29,  t:14,  w:12,  h:7  },
+  'el-ps':      { l:44,  t:13,  w:12,  h:8  },
+  'el-options': { l:59,  t:14,  w:12,  h:7  },
+  'el-cpad':    { l:28,  t:23,  w:44,  h:22 },
+  'el-dpad':    { l:2,   t:23,  w:24,  h:30 },
+  'el-face':    { l:74,  t:23,  w:24,  h:30 },
+  'el-lstick':  { l:3,   t:58,  w:34,  h:28 },
+  'el-rstick':  { l:63,  t:58,  w:34,  h:28 },
+};
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let curX = 0.5, curY = 0.5;
+let lastSX = -1, lastSY = -1;
+let currentMode = 'gamepad';
+let isFlash = false;
+let statusTimer = 0;
+let editMode = false;
+let isFullscreen = false;
+
+// Stick state
+let lstick = { nx: 0, ny: 0 };
+let rstick = { nx: 0, ny: 0 };
+let scrollAccX = 0, scrollAccY = 0;
+const SCROLL_FIRE_THRESH = 1.0;
+
+// L2 drag state
+let l2Held = false, r2Held = false;
+
+// Touchpad state
+const tpState = new Map();
+let tpMode = 'idle', tpLastTap = 0;
+let tpDragActive = false, tpDragTimer = null;
+let tpPinchDist = 0, tpScrollThr = 0, tpZoomThr = 0;
+let tpScrollRefY = 0, tpScrollRefX = 0;
+let tp3RefY = 0, tp3RefX = 0;
+let badgeTimer = null;
+
+// Center pad (gamepad trackpad) state
+const cpState = new Map();
+let cpLastTap = 0;
+let cpDragActive = false, cpDragTimer = null;
+let cpScrollRefY = 0, cpScrollRefX = 0;
+let cpScrollThr = 0;
+
+// ═══════════════════════════════════════════════════════════
+//  DOM
+// ═══════════════════════════════════════════════════════════
+const statusBar  = document.getElementById('statusBar');
+const statusText = document.getElementById('statusText');
+const wsDot      = document.getElementById('wsDot');
+const wsLabel    = document.getElementById('wsLabel');
+const cpadGhost  = document.getElementById('cpadGhost');
+const cpadHint   = document.getElementById('cpadHint');
+const ghostDot   = document.getElementById('ghostDot');
+const centerPad  = document.getElementById('centerPad');
+const gestureBadge = document.getElementById('gestureBadge');
+const dragBadge  = document.getElementById('dragBadge');
+const padHint    = document.getElementById('padHint');
+const mainArea   = document.getElementById('mainArea');
+const touchSurface = document.getElementById('touchSurface');
+const fingerDots = [0,1,2].map(i=>document.getElementById(`fd${i}`));
+const cpadDots   = [0,1,2].map(i=>document.getElementById(`cf${i}`));
+
+// ═══════════════════════════════════════════════════════════
+//  WEBSOCKET
+// ═══════════════════════════════════════════════════════════
+const socket = new WebSocket(`wss://${NGROK}`);
+socket.onopen  = () => { wsDot.className='led on';  wsLabel.textContent='LINKED'; };
+socket.onclose = () => { wsDot.className='led err'; wsLabel.textContent='OFFLINE'; };
+socket.onerror = () => { wsDot.className='led err'; wsLabel.textContent='ERROR'; };
+const wsSend = msg => { if (socket.readyState === WebSocket.OPEN) socket.send(msg); };
+
+// ═══════════════════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════════════════
+function alert2(msg, cls = 'alert') {
+  statusText.textContent = msg;
+  statusBar.className = cls;
+  statusTimer = 80;
+}
+function resetHUD() {
+  statusBar.className = '';
+  statusText.textContent = currentMode === 'gamepad' ? 'GAMEPAD · ACTIVE' : 'TOUCHPAD · ACTIVE';
+}
+function showBadge(msg) {
+  gestureBadge.textContent = msg;
+  gestureBadge.classList.add('show');
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => gestureBadge.classList.remove('show'), 900);
+}
+function flashMain(cls) {
+  mainArea.classList.add(cls);
+  setTimeout(() => mainArea.classList.remove(cls), 200);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MODE
+// ═══════════════════════════════════════════════════════════
+window.setMode = m => {
+  currentMode = m;
+  const isGP = m === 'gamepad';
+  document.getElementById('modeSlider').className = isGP ? '' : 'pad';
+  document.getElementById('btnGamepad').classList.toggle('active', isGP);
+  document.getElementById('btnPad').classList.toggle('active', !isGP);
+  document.getElementById('gamepadScene').classList.toggle('hidden', !isGP);
+  document.getElementById('touchpadMode').classList.toggle('hidden', isGP);
+  resetHUD();
+};
+
+// ═══════════════════════════════════════════════════════════
+//  FULLSCREEN
+// ═══════════════════════════════════════════════════════════
+window.toggleFullscreen = async () => {
+  const icon = document.getElementById('fsIcon');
+  const enterPath = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>`;
+  const exitPath  = `<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>`;
+  try {
+    if (!document.fullscreenElement) {
+      await (document.documentElement.requestFullscreen?.() ||
+             document.documentElement.webkitRequestFullscreen?.());
+      icon.innerHTML = exitPath;
+      document.getElementById('btnFullscreen').classList.add('active');
+    } else {
+      await (document.exitFullscreen?.() || document.webkitExitFullscreen?.());
+      icon.innerHTML = enterPath;
+      document.getElementById('btnFullscreen').classList.remove('active');
+    }
+  } catch(e) {}
+};
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) {
+    document.getElementById('fsIcon').innerHTML = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>`;
+    document.getElementById('btnFullscreen').classList.remove('active');
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  FLASH / TORCH
+// ═══════════════════════════════════════════════════════════
+window.toggleFlash = async () => {
+  isFlash = !isFlash;
+  document.getElementById('btnFlash').classList.toggle('active', isFlash);
+  let used = false;
+  const vid = document.getElementById('webcam');
+  if (vid.srcObject) {
+    try {
+      const t = vid.srcObject.getVideoTracks()[0];
+      if (t && t.getCapabilities().torch) {
+        await t.applyConstraints({ advanced: [{ torch: isFlash }] });
+        used = true;
+      }
+    } catch(e) {}
+  }
+  if (!used) document.body.classList.toggle('flash-mode', isFlash);
+  alert2(isFlash ? (used ? 'TORCH ON' : 'ILLUMINATION ON') : (used ? 'TORCH OFF' : 'ILLUMINATION OFF'));
+};
+
+// ═══════════════════════════════════════════════════════════
+//  SEND POSITION
+// ═══════════════════════════════════════════════════════════
+function sendPos(x, y, force = false) {
+  if (force || Math.hypot(x - lastSX, y - lastSY) > SEND_THRESH) {
+    wsSend(`${x.toFixed(3)},${y.toFixed(3)}`);
+    lastSX = x; lastSY = y;
+    // Update ghost on both pads
+    cpadGhost.style.left = `${x * 100}%`;
+    cpadGhost.style.top  = `${y * 100}%`;
+    ghostDot.style.left  = `${x * 100}%`;
+    ghostDot.style.top   = `${y * 100}%`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAMEPAD BUTTON BINDINGS
+// ═══════════════════════════════════════════════════════════
+function gpBtn(elId, { down, up } = {}) {
+  const btn = document.getElementById(elId);
+  if (!btn) return;
+  btn.addEventListener('touchstart', e => {
+    if (editMode) return;
+    e.preventDefault();
+    btn.classList.add('pressed');
+    down && down();
+  }, { passive: false });
+  btn.addEventListener('touchend', e => {
+    if (editMode) return;
+    e.preventDefault();
+    btn.classList.remove('pressed');
+    up && up();
+  }, { passive: false });
+}
+
+// Face buttons
+gpBtn('fb-cross',    { down: () => { wsSend('GEST:CLICK');       alert2('✕  LEFT CLICK'); } });
+gpBtn('fb-circle',   { down: () => { wsSend('GEST:RIGHT_CLICK'); alert2('○  RIGHT CLICK'); } });
+gpBtn('fb-triangle', { down: () => { wsSend('GEST:TASK_VIEW');   alert2('△  TASK VIEW'); } });
+gpBtn('fb-square',   { down: () => { wsSend('GEST:SHOW_DESKTOP');alert2('□  SHOW DESKTOP'); } });
+
+// Bumpers
+gpBtn('btn-l1', { down: () => { wsSend('GEST:SCROLL_UP');   alert2('L1  SCROLL UP'); } });
+gpBtn('btn-r1', { down: () => { wsSend('GEST:SCROLL_DOWN'); alert2('R1  SCROLL DOWN'); } });
+
+// Triggers — hold for drag
+gpBtn('btn-l2', {
+  down: () => { l2Held = true; wsSend('GEST:LEFT_DOWN'); alert2('L2  DRAG START', 's-green'); },
+  up:   () => { l2Held = false; wsSend('GEST:LEFT_UP');  alert2('L2  DRAG END'); }
+});
+gpBtn('btn-r2', {
+  down: () => { r2Held = true; wsSend('GEST:DOUBLE_CLICK'); alert2('R2  DOUBLE CLICK'); },
+  up:   () => { r2Held = false; }
+});
+
+// D-pad
+gpBtn('dp-up',    { down: () => { wsSend('GEST:SCROLL_UP');    alert2('↑ SCROLL UP'); } });
+gpBtn('dp-down',  { down: () => { wsSend('GEST:SCROLL_DOWN');  alert2('↓ SCROLL DOWN'); } });
+gpBtn('dp-left',  { down: () => { wsSend('GEST:PREV_WINDOW');  alert2('← PREV WINDOW'); } });
+gpBtn('dp-right', { down: () => { wsSend('GEST:NEXT_WINDOW');  alert2('→ NEXT WINDOW'); } });
+
+// Meta
+gpBtn('btn-create',  { down: () => { wsSend('GEST:SCREENSHOT');     alert2('📸 SCREENSHOT'); } });
+gpBtn('btn-options', { down: () => { wsSend('GEST:TOGGLE_KEYBOARD');alert2('⌨ KEYBOARD'); } });
+gpBtn('btn-ps',      { down: () => { alert2('⏻  PS MENU'); } });
+
+// ═══════════════════════════════════════════════════════════
+//  ANALOG STICKS
+// ═══════════════════════════════════════════════════════════
+class VirtualStick {
+  constructor(baseEl, knobEl, onUpdate) {
+    this.base   = baseEl;
+    this.knob   = knobEl;
+    this.onUpdate = onUpdate;
+    this.cx = 0; this.cy = 0; this.r = 0;
+    this.active = false; this.tid = null;
+    this.nx = 0; this.ny = 0;
+    this._bind();
+  }
+  _center() {
+    const rect = this.base.getBoundingClientRect();
+    this.cx = rect.left + rect.width  / 2;
+    this.cy = rect.top  + rect.height / 2;
+    this.r  = rect.width * 0.32;
+  }
+  _move(tx, ty) {
+    const dx = tx - this.cx, dy = ty - this.cy;
+    const dist  = Math.hypot(dx, dy);
+    const clamped = Math.min(dist, this.r);
+    const ang   = Math.atan2(dy, dx);
+    this.nx = (clamped / this.r) * Math.cos(ang);
+    this.ny = (clamped / this.r) * Math.sin(ang);
+    const kx = Math.cos(ang) * clamped;
+    const ky = Math.sin(ang) * clamped;
+    this.knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+    this.knob.classList.toggle('active', dist > this.r * 0.1);
+    this.onUpdate(this.nx, this.ny);
+  }
+  _release() {
+    this.active = false; this.tid = null;
+    this.nx = 0; this.ny = 0;
+    this.knob.style.transform = 'translate(-50%, -50%)';
+    this.knob.classList.remove('active');
+    this.onUpdate(0, 0);
+  }
+  _bind() {
+    this.base.addEventListener('touchstart', e => {
+      if (editMode) return;
+      e.preventDefault();
+      this._center();
+      const t = e.changedTouches[0];
+      this.tid = t.identifier; this.active = true;
+      this._move(t.clientX, t.clientY);
+    }, { passive: false });
+    document.addEventListener('touchmove', e => {
+      if (!this.active) return;
+      const t = [...e.changedTouches].find(t => t.identifier === this.tid);
+      if (t) { e.preventDefault(); this._move(t.clientX, t.clientY); }
+    }, { passive: false });
+    document.addEventListener('touchend', e => {
+      const t = [...e.changedTouches].find(t => t.identifier === this.tid);
+      if (t) this._release();
+    }, { passive: false });
+  }
+}
+
+new VirtualStick(
+  document.getElementById('lstickBase'),
+  document.getElementById('lstickKnob'),
+  (nx, ny) => { lstick.nx = nx; lstick.ny = ny; }
+);
+new VirtualStick(
+  document.getElementById('rstickBase'),
+  document.getElementById('rstickKnob'),
+  (nx, ny) => { rstick.nx = nx; rstick.ny = ny; }
+);
+
+// ── Gamepad animation loop ─────────────────────────────────
+function gamepadLoop() {
+  // Left stick → mouse movement
+  const lMag = Math.hypot(lstick.nx, lstick.ny);
+  if (lMag > STICK_DEADZONE) {
+    const spd = STICK_SPEED_MOUSE * lMag * (1 + lMag);  // quad ramp
+    curX = Math.max(0, Math.min(1, curX + lstick.nx * spd));
+    curY = Math.max(0, Math.min(1, curY + lstick.ny * spd));
+    sendPos(curX, curY);
+  }
+
+  // Right stick → scroll (accumulate then fire)
+  const rMag = Math.hypot(rstick.nx, rstick.ny);
+  if (rMag > STICK_DEADZONE) {
+    scrollAccX += rstick.nx * rMag * STICK_SPEED_SCROLL;
+    scrollAccY += rstick.ny * rMag * STICK_SPEED_SCROLL;
+  }
+  if (Math.abs(scrollAccY) >= SCROLL_FIRE_THRESH) {
+    wsSend(scrollAccY < 0 ? 'GEST:SCROLL_UP' : 'GEST:SCROLL_DOWN');
+    scrollAccY = 0;
+  }
+  if (Math.abs(scrollAccX) >= SCROLL_FIRE_THRESH) {
+    wsSend(scrollAccX < 0 ? 'GEST:SCROLL_LEFT' : 'GEST:SCROLL_RIGHT');
+    scrollAccX = 0;
+  }
+
+  // Status timer
+  if (statusTimer > 0 && --statusTimer === 0) resetHUD();
+
+  requestAnimationFrame(gamepadLoop);
+}
+gamepadLoop();
+
+// ═══════════════════════════════════════════════════════════
+//  CENTER TRACKPAD (DualSense-style trackpad in gamepad mode)
+// ═══════════════════════════════════════════════════════════
+function cpArr() { return [...cpState.values()]; }
+
+function cpEndDrag() {
+  clearTimeout(cpDragTimer);
+  if (cpDragActive) {
+    wsSend('GEST:DROP');
+    alert2('DROPPED');
+    cpDragActive = false;
+    cpDragTimer = null;
+  }
+}
+
+function updateCpadDots() {
+  const ts = [...cpState.values()];
+  const rect = centerPad.getBoundingClientRect();
+  cpadDots.forEach((d, i) => {
+    if (i < ts.length) {
+      d.style.left = `${ts[i].curX - rect.left}px`;
+      d.style.top  = `${ts[i].curY - rect.top}px`;
+      d.style.opacity = '1';
+    } else d.style.opacity = '0';
+  });
+}
+
+centerPad.addEventListener('touchstart', e => {
+  if (editMode) return;
+  e.preventDefault();
+  cpadHint.classList.add('gone');
+  [...e.changedTouches].forEach(t => {
+    cpState.set(t.identifier, {
+      origX: t.clientX, origY: t.clientY,
+      prevX: t.clientX, prevY: t.clientY,
+      curX:  t.clientX, curY:  t.clientY,
+      startTime: Date.now()
+    });
+  });
+  const n = cpState.size, ts = cpArr();
+  if (n === 1) {
+    if (Date.now() - cpLastTap < 380) {
+      // Tap-and-half drag
+      cpLastTap = 0;
+      cpDragActive = true;
+      wsSend('GEST:DRAG_START');
+      sendPos(curX, curY, true);
+      alert2('DRAG ACTIVE');
+    } else {
+      cpDragTimer = setTimeout(() => {
+        if (cpState.size === 1 && ts.length) {
+          const t = ts[0];
+          if (Math.hypot(t.curX - t.origX, t.curY - t.origY) < 14) {
+            cpDragActive = true;
+            wsSend('GEST:DRAG_START');
+            sendPos(curX, curY, true);
+            alert2('DRAG ACTIVE');
+          }
+        }
+      }, 600);
+    }
+  } else if (n === 2) {
+    clearTimeout(cpDragTimer);
+    cpPinchDist = Math.hypot(ts[0].curX - ts[1].curX, ts[0].curY - ts[1].curY);
+    cpScrollRefY = (ts[0].curY + ts[1].curY) / 2;
+    cpScrollRefX = (ts[0].curX + ts[1].curX) / 2;
+    cpScrollThr = 0;
+  }
+  updateCpadDots();
+}, { passive: false });
+
+let cpPinchDist = 0;
+
+centerPad.addEventListener('touchmove', e => {
+  if (editMode) return;
+  e.preventDefault();
+  [...e.changedTouches].forEach(t => {
+    const s = cpState.get(t.identifier);
+    if (s) { s.prevX = s.curX; s.prevY = s.curY; s.curX = t.clientX; s.curY = t.clientY; }
+  });
+  updateCpadDots();
+  const n = cpState.size, ts = cpArr();
+
+  if (n === 1) {
+    const t = ts[0];
+    const dx = t.curX - t.prevX, dy = t.curY - t.prevY;
+    if (!cpDragActive && Math.hypot(t.curX - t.origX, t.curY - t.origY) > 14) clearTimeout(cpDragTimer);
+    const spd = Math.hypot(dx, dy);
+    const acc = spd < 4 ? 0.003 : spd < 12 ? 0.0048 : 0.007;
+    curX = Math.max(0, Math.min(1, curX + dx * acc));
+    curY = Math.max(0, Math.min(1, curY + dy * acc));
+    sendPos(curX, curY);
+  } else if (n === 2) {
+    const d = Math.hypot(ts[0].curX - ts[1].curX, ts[0].curY - ts[1].curY);
+    const midY = (ts[0].curY + ts[1].curY) / 2;
+    const midX = (ts[0].curX + ts[1].curX) / 2;
+    const dd = d - cpPinchDist;
+    const sdY = midY - cpScrollRefY, sdX = midX - cpScrollRefX;
+    if (cpScrollThr > 0) cpScrollThr--;
+    if (Math.abs(dd) > 9) {
+      wsSend(dd > 0 ? 'GEST:ZOOM_IN' : 'GEST:ZOOM_OUT');
+      cpPinchDist = d; cpScrollRefY = midY; cpScrollRefX = midX;
+    } else if (Math.abs(sdY) > 6 && cpScrollThr === 0) {
+      wsSend(sdY < 0 ? 'GEST:SCROLL_DOWN' : 'GEST:SCROLL_UP');
+      cpScrollThr = 4; cpScrollRefY = midY;
+    } else if (Math.abs(sdX) > 10 && cpScrollThr === 0) {
+      wsSend(sdX < 0 ? 'GEST:SCROLL_RIGHT' : 'GEST:SCROLL_LEFT');
+      cpScrollThr = 6; cpScrollRefX = midX;
+    }
+    cpPinchDist = d;
+  }
+}, { passive: false });
+
+centerPad.addEventListener('touchend', e => {
+  if (editMode) return;
+  e.preventDefault();
+  [...e.changedTouches].forEach(ct => {
+    const touch = cpState.get(ct.identifier);
+    const countBefore = cpState.size;
+    if (!touch) { cpState.delete(ct.identifier); return; }
+    const elapsed = Date.now() - touch.startTime;
+    const moved   = Math.hypot(ct.clientX - touch.origX, ct.clientY - touch.origY);
+    const rect    = centerPad.getBoundingClientRect();
+    const rx = ct.clientX - rect.left, ry = ct.clientY - rect.top;
+
+    if (countBefore === 1) {
+      clearTimeout(cpDragTimer);
+      if (cpDragActive) {
+        cpEndDrag();
+      } else if (elapsed < 220 && moved < 12) {
+        // Tap — spawn ripple
+        const r = document.createElement('div');
+        r.className = 'ripple'; r.style.left = rx + 'px'; r.style.top = ry + 'px';
+        centerPad.appendChild(r);
+        r.addEventListener('animationend', () => r.remove());
+        const now = Date.now();
+        if (now - cpLastTap < 370) {
+          wsSend('GEST:DOUBLE_CLICK'); alert2('DOUBLE CLICK');
+          cpLastTap = 0;
+        } else {
+          wsSend('GEST:CLICK'); alert2('CLICK');
+          cpLastTap = now;
+        }
+      }
+    } else if (countBefore === 2 && elapsed < 200 && moved < 12) {
+      wsSend('GEST:RIGHT_CLICK'); alert2('RIGHT CLICK');
+    }
+    cpState.delete(ct.identifier);
+  });
+  updateCpadDots();
+  if (cpState.size === 0) cpPinchDist = 0;
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════════
+//  TOUCHPAD MODE ENGINE  (classic touchpad, unchanged logic)
+// ═══════════════════════════════════════════════════════════
+const tpArr = () => [...tpState.values()];
+
+function tpEndDrag() {
+  clearTimeout(tpDragTimer);
+  if (tpDragActive) {
+    wsSend('GEST:DROP'); alert2('DROPPED');
+    tpDragActive = false;
+    mainArea.classList.remove('drag-active');
+    dragBadge.classList.remove('show');
+  }
+}
+
+touchSurface.addEventListener('touchstart', e => {
+  e.preventDefault(); padHint.classList.add('gone');
+  [...e.changedTouches].forEach(t => {
+    tpState.set(t.identifier, { origX:t.clientX, origY:t.clientY, prevX:t.clientX, prevY:t.clientY, curX:t.clientX, curY:t.clientY, startTime:Date.now() });
+  });
+  const n = tpState.size, ts = tpArr();
+  if (n === 1) {
+    tpMode = 'move';
+    if (Date.now() - tpLastTap < 400) {
+      tpLastTap = 0; tpDragActive = true;
+      wsSend('GEST:DRAG_START'); sendPos(curX, curY, true);
+      alert2('DRAG MODE · RELEASE TO DROP'); mainArea.classList.add('drag-active'); dragBadge.classList.add('show');
+    } else {
+      tpDragTimer = setTimeout(() => {
+        if (tpState.size === 1 && ts.length && Math.hypot(ts[0].curX - ts[0].origX, ts[0].curY - ts[0].origY) < 14) {
+          tpDragActive = true; wsSend('GEST:DRAG_START'); sendPos(curX, curY, true);
+          alert2('DRAG MODE · RELEASE TO DROP'); mainArea.classList.add('drag-active'); dragBadge.classList.add('show');
+        }
+      }, 600);
+    }
+  } else if (n === 2) {
+    clearTimeout(tpDragTimer); tpMode = 'two';
+    tpPinchDist = Math.hypot(ts[0].curX - ts[1].curX, ts[0].curY - ts[1].curY);
+    tpScrollRefY = (ts[0].curY + ts[1].curY) / 2; tpScrollRefX = (ts[0].curX + ts[1].curX) / 2;
+    tpScrollThr = 0; tpZoomThr = 0;
+  } else if (n === 3) {
+    clearTimeout(tpDragTimer); tpMode = 'three';
+    tp3RefY = ts.reduce((s,t) => s + t.curY, 0) / 3;
+    tp3RefX = ts.reduce((s,t) => s + t.curX, 0) / 3;
+  }
+  updateFingerDots();
+}, { passive: false });
+
+touchSurface.addEventListener('touchmove', e => {
+  e.preventDefault();
+  [...e.changedTouches].forEach(t => { const s = tpState.get(t.identifier); if (s) { s.prevX=s.curX; s.prevY=s.curY; s.curX=t.clientX; s.curY=t.clientY; } });
+  updateFingerDots();
+  const n = tpState.size, ts = tpArr();
+  if (n === 1 && tpMode === 'move') {
+    const t = ts[0], dx = t.curX - t.prevX, dy = t.curY - t.prevY;
+    if (!tpDragActive && Math.hypot(t.curX - t.origX, t.curY - t.origY) > 14) clearTimeout(tpDragTimer);
+    const spd = Math.hypot(dx, dy), acc = spd < 4 ? 0.003 : spd < 12 ? 0.0048 : 0.0072;
+    curX = Math.max(0, Math.min(1, curX + dx * acc)); curY = Math.max(0, Math.min(1, curY + dy * acc));
+    sendPos(curX, curY);
+  } else if (n === 2) {
+    const d = Math.hypot(ts[0].curX - ts[1].curX, ts[0].curY - ts[1].curY);
+    const midY = (ts[0].curY + ts[1].curY) / 2, midX = (ts[0].curX + ts[1].curX) / 2;
+    const dd = d - tpPinchDist, sdY = midY - tpScrollRefY, sdX = midX - tpScrollRefX;
+    if (tpZoomThr > 0) tpZoomThr--; if (tpScrollThr > 0) tpScrollThr--;
+    if (Math.abs(dd) > 9 && tpZoomThr === 0) {
+      wsSend(dd > 0 ? 'GEST:ZOOM_IN' : 'GEST:ZOOM_OUT');
+      showBadge(dd > 0 ? '🔍 ZOOM IN' : '🔍 ZOOM OUT'); tpZoomThr = 7; tpScrollRefY = midY; tpScrollRefX = midX;
+    } else if (Math.abs(sdY) > 6 && tpScrollThr === 0 && Math.abs(dd) < 5) {
+      wsSend(sdY < 0 ? 'GEST:SCROLL_DOWN' : 'GEST:SCROLL_UP');
+      showBadge(sdY < 0 ? '⬆ SCROLL UP' : '⬇ SCROLL DOWN'); tpScrollThr = 4; tpScrollRefY = midY;
+    } else if (Math.abs(sdX) > 10 && tpScrollThr === 0 && Math.abs(dd) < 5) {
+      wsSend(sdX < 0 ? 'GEST:SCROLL_RIGHT' : 'GEST:SCROLL_LEFT');
+      showBadge(sdX < 0 ? '▶ SCROLL RIGHT' : '◀ SCROLL LEFT'); tpScrollThr = 6; tpScrollRefX = midX;
+    }
+    tpPinchDist = d;
+  }
+}, { passive: false });
+
+touchSurface.addEventListener('touchend', e => {
+  e.preventDefault();
+  [...e.changedTouches].forEach(ct => {
+    const touch = tpState.get(ct.identifier), countBefore = tpState.size;
+    if (!touch) { tpState.delete(ct.identifier); return; }
+    const elapsed = Date.now() - touch.startTime, moved = Math.hypot(ct.clientX - touch.origX, ct.clientY - touch.origY);
+    const rect = touchSurface.getBoundingClientRect(), rx = ct.clientX - rect.left, ry = ct.clientY - rect.top;
+    if (countBefore === 1 && tpMode === 'move') {
+      clearTimeout(tpDragTimer);
+      if (tpDragActive) { tpEndDrag(); }
+      else if (elapsed < 230 && moved < 13) {
+        const r = document.createElement('div'); r.className='ripple'; r.style.left=rx+'px'; r.style.top=ry+'px';
+        touchSurface.appendChild(r); r.addEventListener('animationend', () => r.remove());
+        const now = Date.now();
+        if (now - tpLastTap < 380) {
+          wsSend('GEST:DOUBLE_CLICK'); alert2('DOUBLE CLICK');
+          flashMain('dbl-flash'); tpLastTap = 0;
+        } else {
+          wsSend('GEST:CLICK'); alert2('LEFT CLICK');
+          flashMain('click-flash'); tpLastTap = now;
+        }
+      }
+    } else if (countBefore === 2 && tpMode === 'two') {
+      if (elapsed < 210 && moved < 13) { wsSend('GEST:RIGHT_CLICK'); alert2('RIGHT CLICK'); }
+    } else if (countBefore === 3 && tpMode === 'three') {
+      const ts = tpArr(), avgY = ts.reduce((s,t) => s+t.curY,0)/ts.length, avgX = ts.reduce((s,t) => s+t.curX,0)/ts.length;
+      const dy = avgY - tp3RefY, dx = avgX - tp3RefX;
+      if (Math.abs(dy) > 22 || Math.abs(dx) > 22) {
+        let g; if (Math.abs(dy) >= Math.abs(dx)) g = dy < 0 ? 'TASK_VIEW' : 'SHOW_DESKTOP'; else g = dx < 0 ? 'NEXT_WINDOW' : 'PREV_WINDOW';
+        wsSend(`GEST:${g}`); alert2(g.replace(/_/g,' ')); showBadge(g.replace(/_/g,' '));
+      }
+    }
+    tpState.delete(ct.identifier);
+  });
+  updateFingerDots(); if (tpState.size === 0) tpMode = 'idle';
+}, { passive: false });
+
+touchSurface.addEventListener('touchcancel', e => {
+  e.preventDefault(); [...e.changedTouches].forEach(t => tpState.delete(t.identifier));
+  clearTimeout(tpDragTimer); if (tpDragActive) tpEndDrag();
+  updateFingerDots(); tpMode = 'idle';
+}, { passive: false });
+
+function updateFingerDots() {
+  const ts = [...tpState.values()], rect = touchSurface.getBoundingClientRect();
+  fingerDots.forEach((d, i) => {
+    if (i < ts.length) { d.style.left=`${ts[i].curX-rect.left}px`; d.style.top=`${ts[i].curY-rect.top}px`; d.style.opacity='1'; }
+    else d.style.opacity = '0';
+  });
+}
+
+function bindClickBtn(id, g, label) {
+  const btn = document.getElementById(id);
+  btn.addEventListener('touchstart', e => { e.preventDefault(); btn.classList.add('pressed'); wsSend(`GEST:${g}`); alert2(label); flashMain('click-flash'); }, { passive: false });
+  btn.addEventListener('touchend',   e => { e.preventDefault(); btn.classList.remove('pressed'); }, { passive: false });
+}
+bindClickBtn('leftBtn', 'CLICK', 'LEFT CLICK');
+bindClickBtn('rightBtn', 'RIGHT_CLICK', 'RIGHT CLICK');
+
+// ═══════════════════════════════════════════════════════════
+//  HUD EDITOR
+// ═══════════════════════════════════════════════════════════
+const LAYOUT_KEY = 'aeropad-layout-v2';
+
+function loadLayout() {
+  try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)) || DEFAULT_LAYOUT; } catch { return DEFAULT_LAYOUT; }
+}
+
+function applyLayout(layout) {
+  const scene = document.getElementById('gamepadScene');
+  const W = scene.offsetWidth, H = scene.offsetHeight;
+  Object.entries(layout).forEach(([id, pos]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.left   = pos.l + '%';
+    el.style.top    = pos.t + '%';
+    el.style.width  = pos.w + '%';
+    el.style.height = pos.h + '%';
+    el.style.right  = '';    // clear any CSS right: positioning
+    el.style.bottom = '';
+  });
+}
+
+function captureLayout() {
+  const scene = document.getElementById('gamepadScene');
+  const W = scene.offsetWidth, H = scene.offsetHeight;
+  const layout = {};
+  Object.keys(DEFAULT_LAYOUT).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const sceneRect = scene.getBoundingClientRect();
+    layout[id] = {
+      l: ((rect.left - sceneRect.left) / W * 100),
+      t: ((rect.top  - sceneRect.top)  / H * 100),
+      w: (rect.width  / W * 100),
+      h: (rect.height / H * 100),
+    };
+  });
+  return layout;
+}
+
+window.saveLayout = () => {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(captureLayout()));
+  alert2('✓ LAYOUT SAVED', 's-green');
+  toggleEditMode();
+};
+
+window.resetLayout = () => {
+  localStorage.removeItem(LAYOUT_KEY);
+  applyLayout(DEFAULT_LAYOUT);
+  alert2('↺ RESET TO DEFAULT', 'alert');
+};
+
+// ── Drag & resize in edit mode ─────────────────────────────
+let editDragEl = null, editDragOffX = 0, editDragOffY = 0;
+let editResizeEl = null, editResizeStartW = 0, editResizeStartH = 0, editResizeStartX = 0, editResizeStartY = 0;
+
+function initEditHandlers() {
+  const scene = document.getElementById('gamepadScene');
+
+  // Add resize handle to each gp-el
+  document.querySelectorAll('.gp-el').forEach(el => {
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    el.appendChild(handle);
+
+    // Resize via handle
+    handle.addEventListener('touchstart', e => {
+      if (!editMode) return;
+      e.preventDefault(); e.stopPropagation();
+      editResizeEl = el;
+      const t = e.changedTouches[0];
+      editResizeStartW = el.offsetWidth;
+      editResizeStartH = el.offsetHeight;
+      editResizeStartX = t.clientX;
+      editResizeStartY = t.clientY;
+    }, { passive: false });
+  });
+
+  // Drag element
+  scene.addEventListener('touchstart', e => {
+    if (!editMode) return;
+    const target = e.target.closest('.gp-el');
+    if (!target || e.target.classList.contains('resize-handle')) return;
+    e.preventDefault();
+    editDragEl = target;
+    const t = e.changedTouches[0];
+    const rect = target.getBoundingClientRect();
+    editDragOffX = t.clientX - rect.left;
+    editDragOffY = t.clientY - rect.top;
+    target.classList.add('selected');
+  }, { passive: false });
+
+  document.addEventListener('touchmove', e => {
+    if (!editMode) return;
+    const t = e.changedTouches[0];
+
+    if (editResizeEl) {
+      e.preventDefault();
+      const sceneW = scene.offsetWidth, sceneH = scene.offsetHeight;
+      const dw = t.clientX - editResizeStartX;
+      const dh = t.clientY - editResizeStartY;
+      const newW = Math.max(60, editResizeStartW + dw);
+      const newH = Math.max(30, editResizeStartH + dh);
+      editResizeEl.style.width  = (newW / sceneW * 100) + '%';
+      editResizeEl.style.height = (newH / sceneH * 100) + '%';
+    } else if (editDragEl) {
+      e.preventDefault();
+      const sceneRect = scene.getBoundingClientRect();
+      const newLeft = t.clientX - sceneRect.left - editDragOffX;
+      const newTop  = t.clientY - sceneRect.top  - editDragOffY;
+      const sceneW  = scene.offsetWidth, sceneH = scene.offsetHeight;
+      editDragEl.style.left = Math.max(0, Math.min(sceneW - editDragEl.offsetWidth,  newLeft)) / sceneW * 100 + '%';
+      editDragEl.style.top  = Math.max(0, Math.min(sceneH - editDragEl.offsetHeight, newTop))  / sceneH * 100 + '%';
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (editDragEl) { editDragEl.classList.remove('selected'); editDragEl = null; }
+    editResizeEl = null;
+  }, { passive: false });
+}
+
+window.toggleEditMode = () => {
+  editMode = !editMode;
+  document.body.classList.toggle('edit-mode', editMode);
+  const btn = document.getElementById('btnEditHUD');
+  btn.classList.toggle('active', editMode);
+  btn.classList.toggle('warn',   editMode);
+  if (editMode) {
+    alert2('✏  HUD EDIT MODE — DRAG TO MOVE · CORNER TO RESIZE', 'alert');
+    statusTimer = 999;
+  } else {
+    statusTimer = 0;
+    resetHUD();
+  }
+};
+
+// ── Boot layout ────────────────────────────────────────────
+function bootLayout() {
+  applyLayout(loadLayout());
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+bootLayout();
+initEditHandlers();
+// Force gamepad mode as default
+setMode('gamepad');
+</script>
+</body>
+</html>
